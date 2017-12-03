@@ -52,7 +52,6 @@ def on_keypress(key):
         RENDER_SCALE += 0.1
 
 cap = cv2.VideoCapture(0)
-face_cascade = cv2.CascadeClassifier("./resources/haarcascade_frontalface_alt.xml")
 font = cv2.FONT_HERSHEY_SIMPLEX
 is_running = True
 
@@ -75,10 +74,12 @@ while cap.isOpened() and is_running:
             out.write(frame)
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.equalizeHist(gray)
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-        for x, y, w, h in faces:
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        # gray = cv2.equalizeHist(gray)
+
+        ret, thresh = cv2.threshold(gray, 127, 255, 0)
+        _, contours, hierarchy = cv2.findContours(thresh, 1, 2)
+
+        cv2.drawContours(frame, contours, -1, (0, 255, 0), 3)
 
 
         # str_list.append("Shape: {}".format(gray.shape))
