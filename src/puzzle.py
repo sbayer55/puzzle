@@ -1,95 +1,99 @@
-"""Module to recognise puzzle peaces
-"""
-
+import sys
 import cv2
+import imutils
+import logging
+from time import sleep
+from service.img_service import ImgService
 
-SAVE_VIDEO = False
-
-CAPURE_SCALE = 0.25
-RENDER_SCALE = 4.0
-WIDTH = int(640 * CAPURE_SCALE)
-HEIGHT = int(480 * CAPURE_SCALE)
-FPS = 4
-
-
-def text(img, str_list):
-    y = 24
-    for s in str_list:
-        cv2.putText(
-            img=img,
-            text=s,
-            org=(10, y),
-            fontFace=font,
-            fontScale=0.6,
-            color=(255,),
-            thickness=2,
-            lineType=cv2.LINE_AA,
-        )
-        y += 24
-
-def render(img):
-    global RENDER_SCALE
-
-    img = cv2.resize(
-        img,
-        None,
-        fx=RENDER_SCALE,
-        fy=RENDER_SCALE,
-        interpolation=cv2.INTER_CUBIC,
-    )
-
-    cv2.imshow('frame', img)
-
-def on_keypress(key):
-    global RENDER_SCALE
-    global is_running
-
-    if key == ord("q"):
-        is_running = False
-    elif key == ord("w"):
-        RENDER_SCALE -= 0.1
-    elif key == ord("e"):
-        RENDER_SCALE += 0.1
-
-cap = cv2.VideoCapture(0)
-font = cv2.FONT_HERSHEY_SIMPLEX
-is_running = True
-
-if SAVE_VIDEO:
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out = cv2.VideoWriter('output.avi', fourcc, FPS, (WIDTH, HEIGHT))
-
-cap.set(cv2.CAP_PROP_FPS, FPS)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
-
-while cap.isOpened() and is_running:
-    ret, frame = cap.read()
-    str_list = list()
-
-    if ret:
-        frame = cv2.flip(frame, 1)
-
-        if SAVE_VIDEO:
-            out.write(frame)
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # gray = cv2.equalizeHist(gray)
-
-        ret, thresh = cv2.threshold(gray, 127, 255, 0)
-        _, contours, hierarchy = cv2.findContours(thresh, 1, 2)
-
-        cv2.drawContours(frame, contours, -1, (0, 255, 0), 3)
+INPUT_DEVICE = 0
+INIT_PAUSE = 0.2
+FPS = 30
+FRAME_LENGTH = int(1000 / FPS)
+SCALE = 0.5
+WIDTH = int(1920 * SCALE)
+HEIGHT = int(1080 * SCALE)
 
 
-        # str_list.append("Shape: {}".format(gray.shape))
-        # str_list.append("Scale: {}".format(RENDER_SCALE))
-        # text(gray, str_list)
+class Puzzle(object):
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
 
-        render(frame)
+        self.logger.setLevel(logging.DEBUG)
+        self.logger.disabled = False
+        self.logger.filters = []
+        
+        stream_handler = logging.StreamHandler(stream=sys.stdout)
+        stream_handler.setLevel(logging.DEBUG)
+        self.logger.addHandler(stream_handler)
 
-        key = cv2.waitKey(1) & 0xFF
-        on_keypress(key)
+        self.logger.debug("Puzzle.__init__()")
 
-cap.release()
-cv2.destroyAllWindows()
+        self.img_service = ImgService(FRAME_LENGTH)
+        self.running = False
+        self.skipped_frames = 0
+        self.key = 0
+        self.text = "__init__"
+
+    def run(self):
+        self.logger.debug("Puzzle.run()")
+        self.cap = cv2.VideoCapture(INPUT_DEVICE)
+        self.cap.set(cv2.CAP_PROP_FPS, FPS)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+
+        self.logger.debug("Pausing for VideoCapture init")
+        sleep(INIT_PAUSE)
+
+        self.running = True
+        self.loop()
+
+    def stop(self):
+        self.running = False
+
+    def on_key(self, key):
+        self.logger.debug("Puzzle.on_key()")
+
+        self.key = key
+        self.text = str(key)
+
+        if key == 113:
+            self.stop()
+        elif key == 111:
+            self.img_service.dynamic_value -= 1
+        elif key == 112:
+            self.img_service.dynamic_value += 1
+
+    def on_frame(self, frame):
+        self.logger.debug("Puzzle.onframe()")
+
+        self.img_service.show(frame)
+        self.img_service.isolate_puzzle(frame)
+
+    def on_skipped_frame(self):
+        self.logger.debug("Puzzle.on_skipped_frame()")
+        self.skipped_frames += 1
+
+        if self.skipped_frames > 10:
+            self.running = False
+
+    def loop(self):
+        self.logger.debug("Puzzle.loop()")
+        while self.running:
+            self.logger.debug("Puzzle.loop() -> loop")
+
+            if self.cap.isOpened():
+                ret, frame = self.cap.read()
+
+                if ret:
+                    self.on_frame(frame)
+                    self.on_key(self.img_service.get_key())
+                else:
+                    self.on_skipped_frame()
+            else:
+                self.logger.error("Unable to open video capture")
+                self.stop()
+        self.cap.release()
+        cv2.destroyAllWindows()
+
+puzzle = Puzzle()
+puzzle.run()
